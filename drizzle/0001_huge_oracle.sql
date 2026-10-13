@@ -1,0 +1,1 @@
+ALTER TABLE `responses` ADD `need_level` text;

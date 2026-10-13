@@ -1,0 +1,34 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import ts from 'typescript';
+import {z} from 'zod';
+const saved=[];let identity=null;
+const db={insert:()=>({values:(value)=>({onConflictDoNothing:async()=>{if(!saved.find(r=>r.id===value.id))saved.push(value)}})}),select:()=>({from:()=>({orderBy:async()=>saved})})};
+globalThis.surveyTest={env:{SURVEY_ADMIN_EMAIL:'owner@example.com'},z,getDb:()=>db,responses:{createdAt:'createdAt'},desc:x=>x,getChatGPTUser:async()=>identity};
+let source=fs.readFileSync('app/api/responses/route.ts','utf8').replace(/^import .*;\n/gm,'');
+source='const {env,z,getDb,responses,desc,getChatGPTUser}=globalThis.surveyTest;\n'+source;
+const js=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
+const {GET,POST}=await import('data:text/javascript;base64,'+Buffer.from(js).toString('base64'));
+const body={id:crypto.randomUUID(),region:'غزة',southArea:null,major:'تكنولوجيا المعلومات',level:'الثاني',interest:'نعم',donate:'نعم',donateCourses:'برمجة 1 — كاملة',need:'نعم',needLevel:'مرتفع',needCourses:'شبكات',attendance:'نعم، حسب الموعد',notes:''};
+const req=(b=body,origin='https://survey.test')=>new Request('https://survey.test/api/responses',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify(b)});
+assert.equal((await GET()).status,403);
+identity={email:'other@example.com'};assert.equal((await GET()).status,403);
+assert.equal((await POST(req(body,'https://other.test'))).status,403);
+assert.equal((await POST(req({...body,donateCourses:''}))).status,400);
+assert.equal((await POST(req({...body,needCourses:''}))).status,400);
+assert.equal((await POST(req())).status,200);assert.equal(saved.length,1);
+assert.equal((await POST(req())).status,200);assert.equal(saved.length,1);
+assert.equal(saved[0].donateCourses,body.donateCourses);assert.equal(saved[0].needCourses,body.needCourses);
+assert.equal(saved[0].needLevel,'مرتفع');
+for(const level of [undefined,null,'','عاجل']) assert.equal((await POST(req({...body,id:crypto.randomUUID(),needLevel:level}))).status,400);
+assert.equal((await POST(req({...body,id:crypto.randomUUID(),need:'ربما',needLevel:null}))).status,400);
+for(const level of ['متوسط','منخفض']){assert.equal((await POST(req({...body,id:crypto.randomUUID(),needLevel:level}))).status,200);assert.equal(saved.at(-1).needLevel,level)}
+assert.equal((await POST(req({...body,id:crypto.randomUUID(),need:'لا',needLevel:'مرتفع'}))).status,200);assert.equal(saved.at(-1).needLevel,null);assert.equal(saved.at(-1).needCourses,'');
+assert.equal((await POST(req({...body,id:crypto.randomUUID(),need:'لا',needLevel:undefined}))).status,200);
+assert.equal(saved[0].region,'غزة');assert.equal(saved[0].southArea,null);
+for(const region of [undefined,null,'','أخرى']) assert.equal((await POST(req({...body,id:crypto.randomUUID(),region}))).status,400);
+for(const southArea of [undefined,null,'','غزة']) assert.equal((await POST(req({...body,id:crypto.randomUUID(),region:'الجنوب',southArea}))).status,400);
+for(const southArea of ['النصيرات','خانيونس','غير ذلك']){assert.equal((await POST(req({...body,id:crypto.randomUUID(),region:'الجنوب',southArea}))).status,200);assert.equal(saved.at(-1).region,'الجنوب');assert.equal(saved.at(-1).southArea,southArea)}
+assert.equal((await POST(req({...body,id:crypto.randomUUID(),southArea:'النصيرات'}))).status,200);assert.equal(saved.at(-1).southArea,null);
+identity={email:'owner@example.com'};const r=await GET();assert.equal(r.status,200);const results=(await r.json()).rows;assert.equal(results.length,9);assert.equal(results[0].needLevel,'مرتفع');
+console.log('PASS: conditional location validation, storage and clearing stale southern area, need-level validation and storage, donor-only normalization, dual donor/recipient, idempotent save, origin checks, owner-only results.');
