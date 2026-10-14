@@ -1,20 +1,26 @@
-# Cloudflare Access setup for the survey admin
+# إعداد لوحة الإدارة المستقلة (بدون Cloudflare Access)
 
-This branch replaces the original ChatGPT Sites sign-in dependency for the survey admin with Cloudflare Access.
+تظل صفحة الاستبيان العامة `/` وإرسال الردود `POST /api/responses` متاحين للطلاب.
 
-1. In Cloudflare Zero Trust > Access > Applications, create a **Self-hosted** application on the Worker hostname. Protect **two** paths: `/admin*` and `/api/admin/*`. Configure two applications if the dashboard does not permit both paths in one.
-2. Add an **Allow** policy including only these two emails:
-   - haladalloul42@gmail.com
-   - banany2007k@gmail.com
-3. Use an email one-time PIN or another identity provider, and ensure Access checks the exact email addresses.
-4. Keep the public homepage `/` and `POST /api/responses` *outside* the Access application. The latter is how students submit survey responses.
-5. In Worker Settings > Variables and Secrets set:
-   - `CF_ACCESS_TEAM_DOMAIN` to your **exact** Access team domain URL, such as `https://your-team.cloudflareaccess.com` (without trailing slash).
-   - `CF_ACCESS_AUD` to the **Application Audience (AUD)** value shown by Cloudflare Access. If using separate Access applications for the two paths, use the same audience for both (prefer one app with both paths); otherwise extend the validation to recognize both distinct audiences securely.
-   - `SURVEY_ADMIN_EMAILS` to `haladalloul42@gmail.com,banany2007k@gmail.com`.
-6. Deploy only once both routes are protected by Access. These changes fail closed (403) if the identity is unverified or config is missing.
-7. Test: guests can submit the public form; unauthenticated visitors cannot read `/api/admin/responses`; only either authorized account can visit `/admin` and export CSV.
+## في Cloudflare Worker: Settings → Variables and Secrets
 
-The server checks the **RSA signature** of the Access JWT against Cloudflare's published JWKS, as well as issuer, audience, expiration, and email allowlist. Client-controlled email headers are not trusted.
+أضيفي **ثلاث قيم من نوع Secret** (لا تضعيها في GitHub أو في المحادثة):
+- `SURVEY_ADMIN_PASSWORD_HALA`: كلمة مرور قوية وفريدة لحساب `haladalloul42@gmail.com`، 16 حرفًا على الأقل.
+- `SURVEY_ADMIN_PASSWORD_BANAN`: كلمة مرور قوية وفريدة لحساب `banany2007k@gmail.com`، 16 حرفًا على الأقل.
+- `SURVEY_SESSION_SECRET`: قيمة عشوائية عالية العشوائية بطول 32 حرفًا على الأقل، مختلفة عن كلمتي المرور.
 
-**Security:** If a public `/api/admin/responses` request contains a forged JWT, it must still be denied. The Access application needs to cover both admin routes. No keys or account tokens should be committed to GitHub.
+لا تستخدمي `CF_ACCESS_AUD` أو `CF_ACCESS_TEAM_DOMAIN`، ولا تحتاجي إلى تفعيل Zero Trust.
+
+## قاعدة البيانات
+
+في D1 Console الخاصة بقاعدة `notes-survey-db` نفذي ملف `drizzle/0003_admin_login_limits.sql` مرة واحدة. هذا الجدول مطلوب لتحديد محاولات تسجيل الدخول. إذا كان الجدول غير موجود يفشل تسجيل الدخول بأمان.
+
+## التجربة
+
+1. بعد تفعيل الإعدادات ودمج التعديل ونشره افتحي `/admin`.
+2. تحوّلك الصفحة إلى `/admin/login` لتدخلي بالبريد وكلمة المرور.
+3. تأكدي أن الحسابين فقط يدخلان إلى النتائج.
+4. تأكدي أن `/api/admin/responses` يعيد 403 لأي زائرة بدون جلسة.
+5. جرّبي إرسال استبيان تجريبي وتحققي من ظهوره وتصدير CSV.
+
+كلمات المرور والجلسات لا تُعرض في GitHub. الجلسة موقعة ومحمية بكوكي HttpOnly/Secure/SameSite=Lax وصلاحيتها 8 ساعات. الدخول محدود مبدئيًا بخمس محاولات لكل عنوان IP خلال كل 15 دقيقة. لا تدمجي قبل إتمام التهيئة وفحص البناء. 
