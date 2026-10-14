@@ -17,9 +17,3 @@ export async function POST(request:Request){
  return Response.json({ok:true},{headers:{'Cache-Control':'no-store'}});
  }catch{return Response.json({error:'تعذر حفظ الإجابة الآن. حاولي مجددًا؛ لن تتكرر إجابتك عند إعادة المحاولة.'},{status:503})}
 }
-export async function GET(){
- const email = await getAuthorizedAdminEmail();
- if (!email) return Response.json({error:'غير مصرح'},{status:403,headers:{'Cache-Control':'no-store'}});
- const rows=await getDb().select().from(responses).orderBy(desc(responses.createdAt));
- return Response.json({rows},{headers:{'Cache-Control':'no-store'}});
-}
